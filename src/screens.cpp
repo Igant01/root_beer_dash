@@ -9,25 +9,168 @@ mainScreen::mainScreen(){
     mode = OFF;
     angle = 1;
     currentGear = PARK;
+    topPageCount = 0;      // No pages configured yet
+    currentTopPage = 0;    // Start on page 0 after setup
 }
 
 void mainScreen::init(){
-    tft.begin(); //3.2" 240x320
-    tft.setRotation(2); // harware is upside down
-    tft.fillScreen(ILI9341_BLACK);//clear screen
+    tft.begin();                          // Initialize ILI9341 display
+    tft.setRotation(2);                   // Set physical screen orientation
+    tft.fillScreen(ILI9341_BLACK);        // Clear the display to black
 }
 
 void mainScreen::updateAll(){
-    tft.fillScreen(ILI9341_BLACK);//clear screen
-    skeleton();
-    if(diff){diffLock();}
-    else{diffUnlock();}
-    if(AWD){AWD_engage();}
-    else{AWD_disengage();}
-    if(mode==OFF){rearSteerOff();}
-    if(mode==CRAB){rearSteerCrab();}
-    if(mode==NORMAL){rearSteerNormal();}
-    shift(currentGear);
+    // Redraw the full dashboard page state.
+    tft.fillScreen(ILI9341_BLACK);       // Clear entire display before redraw.
+    renderTopFieldPage();                // Draw the header text fields.
+    skeleton();                          // Draw the wireframe vehicle body.
+
+    // Draw indicator states and vehicle status blocks.
+    if(diff){ diffLock(); } else { diffUnlock(); }
+    if(AWD){ AWD_engage(); } else { AWD_disengage(); }
+
+    // Draw the currently selected rear-steer visualization.
+    if(mode == OFF){ rearSteerOff(); }
+    if(mode == CRAB){ rearSteerCrab(); }
+    if(mode == NORMAL){ rearSteerNormal(); }
+
+    shift(currentGear);                  // Draw the current gear indicator.
+}
+
+void mainScreen::renderTopFieldPage(){
+    const uint16_t background = ILI9341_BLACK;
+
+    // Clear the top header area and prepare text layout.
+    tft.fillRect(0, 0, 240, 80, background);
+    tft.setTextWrap(false);
+
+    if(topPageCount == 0 || currentTopPage >= topPageCount){
+        tft.setTextColor(ILI9341_RED);
+        tft.setTextSize(2);
+        tft.setCursor(8, 8);
+        tft.print("NO TOP FIELD PAGES");
+        return;
+    }
+
+    TopFieldPage& page = topPages[currentTopPage];
+
+    // Draw the page title in a larger, easy-to-read font.
+    tft.setTextSize(2);
+    tft.setTextColor(ILI9341_GREEN);
+    tft.setCursor(4, 8);
+    tft.print(page.title);
+
+    // Draw each row of label/value pairs below the title.
+    for(uint8_t i = 0; i < page.fieldCount && i < MAX_TOP_FIELDS; ++i){
+        drawTopFieldRow(i, page.labels[i], page.values[i]);
+    }
+}
+
+void mainScreen::drawTopFieldRow(uint8_t row, const char* label, const char* value){
+    // Vertical layout values for the header rows.
+    const uint8_t rowHeight = 18;
+    const uint8_t y = 34 + row * rowHeight;
+    const uint8_t labelX = 4;
+    const uint8_t valueX = 120;
+
+    // Draw the field label on the left.
+    tft.setCursor(labelX, y);
+    tft.setTextColor(ILI9341_WHITE);
+    tft.print(label);
+
+    // Draw the dynamic field value on the right.
+    tft.setCursor(valueX, y);
+    tft.setTextColor(ILI9341_CYAN);
+    tft.print(value);
+}
+
+bool mainScreen::validateTopFieldIndexes(uint16_t pageIndex, uint8_t fieldIndex) const{
+    // Ensure the requested page and field exist before writing values.
+    if(pageIndex >= topPageCount){
+        return false;
+    }
+    return fieldIndex < topPages[pageIndex].fieldCount;
+}
+
+void mainScreen::copyTopFieldText(char* dest, const char* source){
+    // Safe bounded copy for fixed-width character buffers.
+    const size_t maxLen = MAX_FIELD_TEXT - 1;
+    size_t i = 0;
+    while(i < maxLen && source[i] != '\0'){
+        dest[i] = source[i];
+        ++i;
+    }
+    dest[i] = '\0';
+}
+
+bool mainScreen::addTopFieldPage(const char title[MAX_FIELD_TEXT], const char labels[][MAX_FIELD_TEXT], uint8_t fieldCount){
+    // Add a new header page with the provided title and label names only.
+    // Values will be blank until updated by CAN or runtime logic.
+    if(fieldCount == 0 || fieldCount > MAX_TOP_FIELDS || topPageCount >= MAX_TOP_FIELD_PAGES){
+        return false;
+    }
+
+    TopFieldPage& newPage = topPages[topPageCount];
+    newPage.fieldCount = fieldCount;
+    copyTopFieldText(newPage.title, title);
+    for(uint8_t i = 0; i < fieldCount; ++i){
+        copyTopFieldText(newPage.labels[i], labels[i]);
+        newPage.values[i][0] = '\0';        // Initialize value as empty
+    }
+
+    topPageCount++;
+    return true;
+}
+
+bool mainScreen::removeTopFieldPage(uint8_t pageIndex){
+    // Remove the selected header page and slide later pages up to fill the gap.
+    if(pageIndex >= topPageCount){
+        return false;
+    }
+
+    for(uint8_t i = pageIndex; i + 1 < topPageCount; ++i){
+        topPages[i] = topPages[i + 1];
+    }
+    topPageCount--;
+    if(currentTopPage >= topPageCount && topPageCount > 0){
+        currentTopPage = topPageCount - 1;
+    }
+    return true;
+}
+
+bool mainScreen::setTopFieldPage(uint8_t pageIndex){
+    if(pageIndex >= topPageCount){
+        return false;
+    }
+    currentTopPage = pageIndex;
+    return true;
+}
+
+bool mainScreen::nextTopFieldPage(){
+    // Advance to the next header page, wrapping back to the first page.
+    if(topPageCount == 0){
+        return false;
+    }
+    currentTopPage = (currentTopPage + 1) % topPageCount;
+    return true;
+}
+
+bool mainScreen::prevTopFieldPage(){
+    // Move to the previous header page, wrapping to the last page.
+    if(topPageCount == 0){
+        return false;
+    }
+    currentTopPage = (currentTopPage + topPageCount - 1) % topPageCount;
+    return true;
+}
+
+bool mainScreen::updateTopField(uint8_t pageIndex, uint8_t fieldIndex, const char* label, const char* value){
+    if(!validateTopFieldIndexes(pageIndex, fieldIndex)){
+        return false;
+    }
+    copyTopFieldText(topPages[pageIndex].labels[fieldIndex], label);
+    copyTopFieldText(topPages[pageIndex].values[fieldIndex], value);
+    return true;
 }
 
 void mainScreen::splashScreen(int time){
