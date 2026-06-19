@@ -18,6 +18,7 @@ enum rearSteer{
     NORMAL,
     CRAB,
     OFF,
+    MANUAL,
 };
 
 enum GEAR{
@@ -58,6 +59,7 @@ class mainScreen{
         static void rearSteerOffInvert();                  // Clears previous front wheel steering state.
         static void rearSteerCrabInvert();                 // Clears previous crab steering state.
         static void rearSteerNormalInvert();               // Clears previous normal steering state.
+        static void rearSteerManualInvert();               // Clears previous manual steering state.
         void renderTopFieldPage();                         // Draws the top header page.
         void drawTopFieldRow(uint8_t row, const char* label, const char* value); // Draws one label/value row.
         bool validateTopFieldIndexes(uint16_t pageIndex, uint8_t fieldIndex) const;
@@ -67,6 +69,7 @@ class mainScreen{
         mainScreen();
         void init();
         void updateAll();
+        void updateTopHeader();
         void splashScreen(int time);
         void splashScreen2(int time);
         void diffLock();
@@ -76,6 +79,7 @@ class mainScreen{
         void rearSteerOff();
         void rearSteerCrab();
         void rearSteerNormal();
+        void rearSteerManual();
         void shift(GEAR inputGear);
         void unlockDiffScreen(int time);
         void lockDiffScreen(int time);
@@ -88,6 +92,7 @@ class mainScreen{
         bool setTopFieldPage(uint8_t pageIndex);
         bool nextTopFieldPage();
         bool prevTopFieldPage();
+        uint16_t getTopPageCount() const;
         bool updateTopField(uint8_t pageIndex, uint8_t fieldIndex, const char* label, const char* value);
 };
 

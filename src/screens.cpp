@@ -33,15 +33,23 @@ void mainScreen::updateAll(){
     if(mode == OFF){ rearSteerOff(); }
     if(mode == CRAB){ rearSteerCrab(); }
     if(mode == NORMAL){ rearSteerNormal(); }
+    if(mode == MANUAL){ rearSteerManual(); }
 
     shift(currentGear);                  // Draw the current gear indicator.
 }
 
+void mainScreen::updateTopHeader(){
+    renderTopFieldPage();                // Draw only the header area.
+}
+
 void mainScreen::renderTopFieldPage(){
     const uint16_t background = ILI9341_BLACK;
+    const uint8_t rowHeight = 18;
+    const uint8_t headerBase = 34;
+    const uint8_t headerHeight = headerBase + (MAX_TOP_FIELDS * rowHeight);
 
-    // Clear the top header area and prepare text layout.
-    tft.fillRect(0, 0, 240, 80, background);
+    // Clear the full top header area and prepare text layout.
+    tft.fillRect(0, 0, 240, headerHeight, background);
     tft.setTextWrap(false);
 
     if(topPageCount == 0 || currentTopPage >= topPageCount){
@@ -162,6 +170,10 @@ bool mainScreen::prevTopFieldPage(){
     }
     currentTopPage = (currentTopPage + topPageCount - 1) % topPageCount;
     return true;
+}
+
+uint16_t mainScreen::getTopPageCount() const {
+    return topPageCount;
 }
 
 bool mainScreen::updateTopField(uint8_t pageIndex, uint8_t fieldIndex, const char* label, const char* value){
@@ -298,6 +310,41 @@ void mainScreen::rearSteerNormal(){
     mode = NORMAL;
 }
 
+void mainScreen::rearSteerManual(){
+    if(mode==OFF){
+        rearSteerOffInvert();
+    }
+    if(mode==NORMAL){
+        rearSteerNormalInvert();
+    }
+    if(mode==CRAB){
+        rearSteerCrabInvert();
+    }
+    if(mode==MANUAL){
+        rearSteerManualInvert();
+    }
+
+    tft.drawRect(15,140+yOffset,40,20,ILI9341_WHITE); // straight front wheels
+    tft.drawRect(15,230+yOffset,40,20,ILI9341_WHITE);
+
+    tft.drawLine(178,150+yOffset,215,133+yOffset,ILI9341_WHITE); //rear right turned left
+    tft.drawLine(215,133+yOffset,223,152+yOffset,ILI9341_WHITE);
+    tft.drawLine(223,152+yOffset,187,168+yOffset,ILI9341_WHITE);
+    tft.drawLine(187,168+yOffset,178,150+yOffset,ILI9341_WHITE);
+
+    tft.drawLine(187,238+yOffset,223,222+yOffset,ILI9341_WHITE); //rear left turned left
+    tft.drawLine(223,222+yOffset,232,240+yOffset,ILI9341_WHITE);
+    tft.drawLine(232,240+yOffset,195,257+yOffset,ILI9341_WHITE);
+    tft.drawLine(195,257+yOffset,187,238+yOffset,ILI9341_WHITE);
+
+    tft.setCursor(80, 190+yOffset);
+    tft.setTextSize(2);
+    tft.setTextColor(ILI9341_YELLOW);
+    tft.print("MANUAL");
+
+    mode = MANUAL;
+}
+
 void mainScreen::rearSteerOffInvert(){
     tft.drawRect(15,140+yOffset,40,20,ILI9341_BLACK); // straight front wheels
     tft.drawRect(15,230+yOffset,40,20,ILI9341_BLACK);
@@ -348,6 +395,26 @@ void mainScreen::rearSteerNormalInvert(){
     tft.drawLine(223,238+yOffset,215,257+yOffset,ILI9341_BLACK);
     tft.drawLine(215,257+yOffset,178,240+yOffset,ILI9341_BLACK);
     tft.drawLine(178,240+yOffset,187,222+yOffset,ILI9341_BLACK);
+}
+
+void mainScreen::rearSteerManualInvert(){
+    tft.drawRect(15,140+yOffset,40,20,ILI9341_BLACK); // straight front wheels
+    tft.drawRect(15,230+yOffset,40,20,ILI9341_BLACK);
+
+    tft.drawLine(178,150+yOffset,215,133+yOffset,ILI9341_BLACK); //rear right turned left
+    tft.drawLine(215,133+yOffset,223,152+yOffset,ILI9341_BLACK);
+    tft.drawLine(223,152+yOffset,187,168+yOffset,ILI9341_BLACK);
+    tft.drawLine(187,168+yOffset,178,150+yOffset,ILI9341_BLACK);
+
+    tft.drawLine(187,238+yOffset,223,222+yOffset,ILI9341_BLACK); //rear left turned left
+    tft.drawLine(223,222+yOffset,232,240+yOffset,ILI9341_BLACK);
+    tft.drawLine(232,240+yOffset,195,257+yOffset,ILI9341_BLACK);
+    tft.drawLine(195,257+yOffset,187,238+yOffset,ILI9341_BLACK);
+
+    tft.setTextSize(2);
+    tft.setTextColor(ILI9341_BLACK);
+    tft.setCursor(80, 190+yOffset);
+    tft.print("MANUAL");
 }
 
 void mainScreen::shift(GEAR inputGear){
