@@ -303,6 +303,9 @@ void mainScreen::rearSteerOff(){
     if(mode==CRAB){
         rearSteerCrabInvert();
     }
+    if(mode==MANUAL){
+        rearSteerManualInvert();
+    }
     tft.drawRect(15,140+yOffset,40,20,ILI9341_WHITE); // straight front wheels
     tft.drawRect(15,230+yOffset,40,20,ILI9341_WHITE);
 
@@ -320,6 +323,9 @@ void mainScreen::rearSteerCrab(){
     }
     if(mode==CRAB){
         rearSteerCrabInvert();
+    }
+    if(mode==MANUAL){
+        rearSteerManualInvert();
     }
     tft.drawLine(8,150+yOffset,45,133+yOffset,ILI9341_WHITE); //front right turned left
     tft.drawLine(45,133+yOffset,53,152+yOffset,ILI9341_WHITE);
@@ -352,6 +358,9 @@ void mainScreen::rearSteerNormal(){
     }
     if(mode==CRAB){
         rearSteerCrabInvert();
+    }
+    if(mode==MANUAL){
+        rearSteerManualInvert();
     }
     tft.drawLine(8,150+yOffset,45,133+yOffset,ILI9341_WHITE); //front right turned left
     tft.drawLine(45,133+yOffset,53,152+yOffset,ILI9341_WHITE);
@@ -401,11 +410,6 @@ void mainScreen::rearSteerManual(){
     tft.drawLine(223,222+yOffset,232,240+yOffset,ILI9341_WHITE);
     tft.drawLine(232,240+yOffset,195,257+yOffset,ILI9341_WHITE);
     tft.drawLine(195,257+yOffset,187,238+yOffset,ILI9341_WHITE);
-
-    tft.setCursor(80, 190+yOffset);
-    tft.setTextSize(2);
-    tft.setTextColor(ILI9341_YELLOW);
-    tft.print("MANUAL");
 
     mode = MANUAL;
 }
@@ -476,10 +480,6 @@ void mainScreen::rearSteerManualInvert(){
     tft.drawLine(232,240+yOffset,195,257+yOffset,ILI9341_BLACK);
     tft.drawLine(195,257+yOffset,187,238+yOffset,ILI9341_BLACK);
 
-    tft.setTextSize(2);
-    tft.setTextColor(ILI9341_BLACK);
-    tft.setCursor(80, 190+yOffset);
-    tft.print("MANUAL");
 }
 
 void mainScreen::shift(GEAR inputGear){

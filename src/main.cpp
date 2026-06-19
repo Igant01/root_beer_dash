@@ -146,9 +146,6 @@ void processCanMessage(const CAN_message_t &msg){
         case 3: temp.rearSteerCrab(); break;
         default: temp.rearSteerManual(); break;
       }
-      temp.setTopFieldPage(3);
-      currentKeypadPage = 3;
-      pageChanged = true;
     }
 
     uint8_t newAngle = msg.buf[1] < 1 ? 1 : msg.buf[1];
