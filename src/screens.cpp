@@ -75,20 +75,62 @@ void mainScreen::renderTopFieldPage(){
 }
 
 void mainScreen::drawTopFieldRow(uint8_t row, const char* label, const char* value){
-    // Vertical layout values for the header rows.
+    const uint16_t background = ILI9341_BLACK;
     const uint8_t rowHeight = 18;
     const uint8_t y = 34 + row * rowHeight;
     const uint8_t labelX = 4;
-    const uint8_t valueX = 120;
+
+    // Clear the entire row before drawing label/value pair.
+    tft.fillRect(0, y, 240, rowHeight, background);
+    tft.setTextWrap(false);
 
     // Draw the field label on the left.
-    tft.setCursor(labelX, y);
+    tft.setTextSize(2);
     tft.setTextColor(ILI9341_WHITE);
+    tft.setCursor(labelX, y);
     tft.print(label);
 
-    // Draw the dynamic field value on the right.
-    tft.setCursor(valueX, y);
+    // Draw the dynamic field value on the right, avoiding label overlap.
+    drawTopFieldValue(row, label, value);
+}
+
+void mainScreen::drawTopFieldValue(uint8_t row, const char* label, const char* value){
+    const uint16_t background = ILI9341_BLACK;
+    const uint8_t rowHeight = 18;
+    const uint8_t y = 34 + row * rowHeight;
+    const uint8_t valueRight = 236;
+    const uint8_t defaultMinValueX = 120;
+    uint8_t minValueX = defaultMinValueX;
+
+    tft.setTextWrap(false);
+    tft.setTextSize(2);
     tft.setTextColor(ILI9341_CYAN);
+
+    if(label && label[0] != '\0'){
+        int16_t x1, y1;
+        uint16_t labelWidth, labelHeight;
+        tft.getTextBounds(label, 0, 0, &x1, &y1, &labelWidth, &labelHeight);
+        uint16_t labelRight = 4 + labelWidth;
+        if(labelRight + 10 > minValueX){
+            minValueX = labelRight + 10;
+            if(minValueX > 200){
+                minValueX = defaultMinValueX;
+            }
+        }
+    }
+
+    int16_t x1, y1;
+    uint16_t w, h;
+    tft.getTextBounds(value, 0, 0, &x1, &y1, &w, &h);
+
+    int16_t valueX = valueRight - w;
+    if (valueX < minValueX) {
+        valueX = minValueX;
+    }
+
+    // Clear only the value region so label stays intact when updating.
+    tft.fillRect(minValueX, y, 240 - minValueX, rowHeight, background);
+    tft.setCursor(valueX, y);
     tft.print(value);
 }
 
@@ -113,7 +155,7 @@ void mainScreen::copyTopFieldText(char* dest, const char* source){
 
 bool mainScreen::addTopFieldPage(const char title[MAX_FIELD_TEXT], const char labels[][MAX_FIELD_TEXT], uint8_t fieldCount){
     // Add a new header page with the provided title and label names only.
-    // Values will be blank until updated by CAN or runtime logic.
+    // Values will initialize to '--' so unreceived fields show a placeholder.
     if(fieldCount == 0 || fieldCount > MAX_TOP_FIELDS || topPageCount >= MAX_TOP_FIELD_PAGES){
         return false;
     }
@@ -123,7 +165,11 @@ bool mainScreen::addTopFieldPage(const char title[MAX_FIELD_TEXT], const char la
     copyTopFieldText(newPage.title, title);
     for(uint8_t i = 0; i < fieldCount; ++i){
         copyTopFieldText(newPage.labels[i], labels[i]);
-        newPage.values[i][0] = '\0';        // Initialize value as empty
+        if(labels[i][0] != '\0'){
+            copyTopFieldText(newPage.values[i], "--");
+        } else {
+            newPage.values[i][0] = '\0';
+        }
     }
 
     topPageCount++;
@@ -180,8 +226,27 @@ bool mainScreen::updateTopField(uint8_t pageIndex, uint8_t fieldIndex, const cha
     if(!validateTopFieldIndexes(pageIndex, fieldIndex)){
         return false;
     }
-    copyTopFieldText(topPages[pageIndex].labels[fieldIndex], label);
-    copyTopFieldText(topPages[pageIndex].values[fieldIndex], value);
+
+    bool labelChanged = false;
+    bool valueChanged = false;
+
+    if(strcmp(topPages[pageIndex].labels[fieldIndex], label) != 0){
+        copyTopFieldText(topPages[pageIndex].labels[fieldIndex], label);
+        labelChanged = true;
+    }
+    if(strcmp(topPages[pageIndex].values[fieldIndex], value) != 0){
+        copyTopFieldText(topPages[pageIndex].values[fieldIndex], value);
+        valueChanged = true;
+    }
+
+    if(pageIndex == currentTopPage && (labelChanged || valueChanged)){
+        if(labelChanged){
+            drawTopFieldRow(fieldIndex, topPages[pageIndex].labels[fieldIndex], topPages[pageIndex].values[fieldIndex]);
+        } else {
+            drawTopFieldValue(fieldIndex, topPages[pageIndex].labels[fieldIndex], topPages[pageIndex].values[fieldIndex]);
+        }
+    }
+
     return true;
 }
 

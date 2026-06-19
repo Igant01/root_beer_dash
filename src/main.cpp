@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include <FlexCAN_T4.h>
-#include <gauge_stepper.h>
-#include <volt_meter.h>
-#include <lights.h>
-#include <screens.h>
-#include <LMT87.h>
+#include "gauge_stepper.h"
+#include "volt_meter.h"
+#include "lights.h"
+#include "screens.h"
+#include "LMT87.h"
 #include "fault.h"
 
 
@@ -21,10 +21,7 @@ const uint32_t INPUTMOD_MES1_CAN_ID = 0x220;
 const uint32_t STATUS_CAN_ID = 0x521;
 const unsigned long DISPLAY_REFRESH_INTERVAL_MS = 250;
 const unsigned long STATUS_BROADCAST_INTERVAL_MS = 1000;
-const float BATTERY_FAULT_THRESHOLD = 11.0f;      // volts
-const int TEMPERATURE_FAULT_THRESHOLD_F = 185;    // Fahrenheit
 
-FaultContainer moduleFaults;
 uint8_t heartbeatCounter = 0;
 unsigned long lastStatusBroadcast = 0;
 
@@ -35,27 +32,24 @@ LMT87 ambientTempSensor;
 cluster_lights dashLights;
 mainScreen temp;
 
+uint8_t currentKeypadPage = 0;
+uint8_t currentRearSteerMode = 1;
+uint8_t currentRearSteerAngle = 1;
+bool currentLaunchControl = false;
+bool currentAWD = false;
+bool currentDiff = false;
+bool currentPod = false;
+bool currentLightBar = false;
+bool currentBrake = false;
+uint8_t currentGearValue = 0;
+bool fullDisplayUpdatePending = false;
+bool displayUpdatePending = false;
+
 static inline uint16_t combineBytes(uint8_t low, uint8_t high){
   return (uint16_t)low | ((uint16_t)high << 8);
 }
 
-static void evaluateFaults(){
-  float batteryVolts = batt.read();
-  if(batteryVolts < BATTERY_FAULT_THRESHOLD){
-    moduleFaults.set(FAULT_BATTERY_LOW);
-  } else {
-    moduleFaults.clear(FAULT_BATTERY_LOW);
-  }
-
-  int ambientF = ambientTempSensor.read();
-  if(ambientF > TEMPERATURE_FAULT_THRESHOLD_F){
-    moduleFaults.set(FAULT_TEMPERATURE_HIGH);
-  } else {
-    moduleFaults.clear(FAULT_TEMPERATURE_HIGH);
-  }
-}
-
-static void sendStatusMessage(){
+static void sendStatusMessage(FaultId fault){
   CAN_message_t status;
   status.id = STATUS_CAN_ID;
   status.flags.extended = 0;
@@ -63,11 +57,10 @@ static void sendStatusMessage(){
   status.len = 8;
 
   status.buf[0] = heartbeatCounter++;
-  status.buf[1] = moduleFaults.firstActiveFault();
+  status.buf[1] = static_cast<uint8_t>(fault);
   status.buf[2] = static_cast<uint8_t>(temp.getTopPageCount());
-  uint16_t mask = moduleFaults.activeMask16();
-  status.buf[3] = static_cast<uint8_t>(mask & 0xFF);
-  status.buf[4] = static_cast<uint8_t>((mask >> 8) & 0xFF);
+  status.buf[3] = static_cast<uint8_t>(currentKeypadPage + 1);
+  status.buf[4] = 0;
   status.buf[5] = 0;
   status.buf[6] = 0;
   status.buf[7] = 0;
@@ -79,7 +72,6 @@ void processCanMessage(const CAN_message_t &msg){
   char buf[16];
   bool pageChanged = false;
   bool modeChanged = false;
-  bool headerChanged = false;
 
   Serial.print("CAN RX ID=0x");
   Serial.println(msg.id, HEX);
@@ -154,47 +146,90 @@ void processCanMessage(const CAN_message_t &msg){
         case 3: temp.rearSteerCrab(); break;
         default: temp.rearSteerManual(); break;
       }
-      modeChanged = true;
+      temp.setTopFieldPage(3);
+      currentKeypadPage = 3;
+      pageChanged = true;
     }
 
     uint8_t newAngle = msg.buf[1] < 1 ? 1 : msg.buf[1];
     if(newAngle != currentRearSteerAngle){
       currentRearSteerAngle = newAngle;
       snprintf(buf, sizeof(buf), "%u", currentRearSteerAngle);
-      temp.updateTopField(3, 3, "Angle", buf);
-      headerChanged = true;
+      temp.updateTopField(3, 2, "Angle", buf);
+      if(currentKeypadPage != 3){
+        currentKeypadPage = 3;
+        temp.setTopFieldPage(3);
+        pageChanged = true;
+      }
     }
 
     bool newLaunch = msg.buf[3] != 0;
     if(newLaunch != currentLaunchControl){
       currentLaunchControl = newLaunch;
-      temp.updateTopField(3, 2, "Launch", currentLaunchControl ? "ON" : "OFF");
-      headerChanged = true;
+      temp.updateTopField(2, 4, "Launch", currentLaunchControl ? "ON" : "OFF");
+      if(currentKeypadPage != 2){
+        currentKeypadPage = 2;
+        temp.setTopFieldPage(2);
+        pageChanged = true;
+      }
     }
   }
   else if(msg.id == INPUTMOD_MES1_CAN_ID){
-    bool newMode = false;
-    snprintf(buf, sizeof(buf), "%s", (msg.buf[0] & 0x01) ? "ON" : "OFF");
-    temp.updateTopField(5, 0, "AWD", buf);
-    snprintf(buf, sizeof(buf), "%s", (msg.buf[0] & 0x02) ? "ON" : "OFF");
-    temp.updateTopField(5, 1, "Diff", buf);
-    snprintf(buf, sizeof(buf), "%s", (msg.buf[0] & 0x04) ? "ON" : "OFF");
-    temp.updateTopField(5, 2, "Pod", buf);
-    snprintf(buf, sizeof(buf), "%s", (msg.buf[0] & 0x08) ? "ON" : "OFF");
-    temp.updateTopField(5, 3, "LightBar", buf);
-    snprintf(buf, sizeof(buf), "%s", (msg.buf[0] & 0x10) ? "ON" : "OFF");
-    temp.updateTopField(5, 4, "Brake", buf);
+    bool newAWD = (msg.buf[0] & 0x01) != 0;
+    bool newDiff = (msg.buf[0] & 0x02) != 0;
+    bool newPod = (msg.buf[0] & 0x04) != 0;
+    bool newLightBar = (msg.buf[0] & 0x08) != 0;
+    bool newBrake = (msg.buf[0] & 0x10) != 0;
+    uint8_t newGearValue = msg.buf[1];
+    bool inputChanged = false;
 
-    uint8_t gearValue = msg.buf[1];
-    switch(gearValue){
-      case 1: temp.shift(PARK); break;
-      case 2: temp.shift(REVERSE); break;
-      case 3: temp.shift(NEUTRAL); break;
-      case 4: temp.shift(LOWGEAR); break;
-      case 5: temp.shift(DRIVE); break;
-      default: temp.shift(PARK); break;
+    if(newAWD != currentAWD){
+      currentAWD = newAWD;
+      snprintf(buf, sizeof(buf), "%s", currentAWD ? "ON" : "OFF");
+      temp.updateTopField(5, 0, "AWD", buf);
+      inputChanged = true;
     }
-    fullDisplayUpdatePending = true;
+    if(newDiff != currentDiff){
+      currentDiff = newDiff;
+      snprintf(buf, sizeof(buf), "%s", currentDiff ? "ON" : "OFF");
+      temp.updateTopField(5, 1, "Diff", buf);
+      inputChanged = true;
+    }
+    if(newPod != currentPod){
+      currentPod = newPod;
+      snprintf(buf, sizeof(buf), "%s", currentPod ? "ON" : "OFF");
+      temp.updateTopField(5, 2, "Pod", buf);
+      inputChanged = true;
+    }
+    if(newLightBar != currentLightBar){
+      currentLightBar = newLightBar;
+      snprintf(buf, sizeof(buf), "%s", currentLightBar ? "ON" : "OFF");
+      temp.updateTopField(5, 3, "LightBar", buf);
+      inputChanged = true;
+    }
+    if(newBrake != currentBrake){
+      currentBrake = newBrake;
+      snprintf(buf, sizeof(buf), "%s", currentBrake ? "ON" : "OFF");
+      temp.updateTopField(5, 4, "Brake", buf);
+      inputChanged = true;
+    }
+
+    if(newGearValue != currentGearValue){
+      currentGearValue = newGearValue;
+      switch(currentGearValue){
+        case 1: temp.shift(PARK); break;
+        case 2: temp.shift(REVERSE); break;
+        case 3: temp.shift(NEUTRAL); break;
+        case 4: temp.shift(LOWGEAR); break;
+        case 5: temp.shift(DRIVE); break;
+        default: temp.shift(PARK); break;
+      }
+      inputChanged = true;
+    }
+
+    if(inputChanged){
+      // input values already update individual rows when their page is active
+    }
   }
 
   snprintf(buf, sizeof(buf), "0x%03lX", (unsigned long)msg.id);
@@ -206,7 +241,7 @@ void processCanMessage(const CAN_message_t &msg){
   if(modeChanged){
     fullDisplayUpdatePending = true;
   }
-  else if(pageChanged || headerChanged){
+  else if(pageChanged){
     displayUpdatePending = true;
   }
 }
@@ -246,15 +281,15 @@ void setup() {
     "EGT2",        // ECU 3 page field 1
     "TPS",         // ECU 3 page field 2
     "Fuel P",      // ECU 3 page field 3
-    ""             // ECU 3 page field 4 (unused)
+    "Launch"       // ECU 3 page field 4
   };
   temp.addTopFieldPage("ECU 3", labels2, 5);
 
   const char labels3[][16] = {
     "Avg Power",   // Rear Steer page field 0
     "Peak Power",  // Rear Steer page field 1
-    "Launch",      // Rear Steer page field 2
-    "Angle",       // Rear Steer page field 3
+    "Angle",       // Rear Steer page field 2
+    "",            // Rear Steer page field 3
     ""             // Rear Steer page field 4 (unused)
   };
   temp.addTopFieldPage("Rear Steer", labels3, 5);
@@ -304,8 +339,8 @@ void loop() {
   unsigned long now = millis();
   if(now - lastStatusBroadcast >= STATUS_BROADCAST_INTERVAL_MS){
     lastStatusBroadcast = now;
-    evaluateFaults();
-    sendStatusMessage();
+    FaultId currentFault = evaluateFaults(batt.read(), ambientTempSensor.read());
+    sendStatusMessage(currentFault);
   }
 
   if(now - lastRefresh >= DISPLAY_REFRESH_INTERVAL_MS){

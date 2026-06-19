@@ -62,6 +62,7 @@ class mainScreen{
         static void rearSteerManualInvert();               // Clears previous manual steering state.
         void renderTopFieldPage();                         // Draws the top header page.
         void drawTopFieldRow(uint8_t row, const char* label, const char* value); // Draws one label/value row.
+        void drawTopFieldValue(uint8_t row, const char* label, const char* value); // Draws only the value portion.
         bool validateTopFieldIndexes(uint16_t pageIndex, uint8_t fieldIndex) const;
         void copyTopFieldText(char* dest, const char* source);
 
