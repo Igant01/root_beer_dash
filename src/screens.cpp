@@ -1,4 +1,5 @@
 #include <screens.h>
+//240x320 ILI9341 display connected to SPI1 
 
 Adafruit_ILI9341 tft = Adafruit_ILI9341(CS, DC);
 int yOffset = 0;

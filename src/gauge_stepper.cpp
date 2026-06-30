@@ -1,71 +1,95 @@
 #include <Arduino.h>
 #include <gauge_stepper.h>
-int pause = 20; //delay for mechanical limitation
 
-X27168::X27168(int step,int dir){
-    absPosition = 0;
-    microStep = 2; 
-    positionKnown = false;
+X27168::X27168(int step,int dir)
+    : stepper(AccelStepper::DRIVER, step, dir){
+    absPosition = 0; //absolute stored position
+    microStep = 2; //half stepping
     stepPin = step;
     dirPin = dir;
-    pinMode(step,OUTPUT);
-    pinMode(dir,OUTPUT);
-    digitalWrite(stepPin,LOW);
-    digitalWrite(dirPin,LOW);
+    absMax = 1200; //physical max at half-step resolution
+    absMin = 0; //physical min
+    relMax = 0; //relative max
+    relMin = 0; //relative min
+    maxSpeed = 2000;
+    maxAcceleration = 250;
 
+    stepper.setMaxSpeed(maxSpeed);
+    stepper.setAcceleration(maxAcceleration);
+    stepper.setPinsInverted(true, false, false);
+    stepper.setCurrentPosition(absPosition);
 }
 
 int X27168::getPosition(){
+    absPosition = static_cast<int>(stepper.currentPosition());
     return absPosition;
 }
 
-void X27168::setPosition(int set){ //600 steps * microstep
-    if(positionKnown){
-        if(set>absPosition){
-            digitalWrite(dirPin,HIGH);
-            for(int i=0; i<=set-absPosition; i++){
-                digitalWrite(stepPin,HIGH);
-                delay(pause);
-                digitalWrite(stepPin,LOW);
-                delay(pause);
-            }
-        }
-        if(set<absPosition){
-            digitalWrite(dirPin,LOW);
-            for(int i=0; i<absPosition-set; i++){
-                digitalWrite(stepPin,HIGH);
-                delay(pause);
-                digitalWrite(stepPin,LOW);
-                delay(pause);                
-            }
-        }   
-    absPosition = set;
+void X27168::setPosition(int set){
+    if(set > absMax){
+        set = absMax;
     }
+    if(set < absMin){
+        set = absMin;
+    }
+
+    stepper.moveTo(set);
+    stepper.runToPosition();
+    absPosition = static_cast<int>(stepper.currentPosition());
 }
 
 void X27168::home(){
-    digitalWrite(dirPin,HIGH);
-    for(int i=0; i<=600*microStep; i++){
-        digitalWrite(stepPin,HIGH);
-        delay(pause);
-        digitalWrite(stepPin,LOW);
-        delay(pause);
-    }
-    digitalWrite(dirPin,LOW);
-    for(int i=0; i<=600*microStep; i++){
-        digitalWrite(stepPin,HIGH);
-        delay(pause);
-        digitalWrite(stepPin,LOW);
-        delay(pause);
-    }
-    absPosition = 0;
-    positionKnown = true;
+    const int overdriveSteps = 1;
+    int start = getPosition();
+
+    // Overdrive upward to guarantee stop contact and intentional step loss,
+    // then come back exactly one full travel to absolute zero.
+    stepper.moveTo(start + (absMax - absMin) + overdriveSteps);
+    stepper.runToPosition();
+
+    stepper.setCurrentPosition(absMax);
+    stepper.moveTo(absMin);
+    stepper.runToPosition();
+    stepper.setCurrentPosition(absMin);
+    absPosition = absMin;
 }
 
-void X27168::setMicroSteps(int microSteps){
-    microStep = microSteps;
+void X27168::setRelMax(int max){
+    if(max > absMax){
+        max = absMax;
+    }
+    if(max < absMin){
+        max = absMin;
+    }
+    relMax = max;
+
+    if(relMax < relMin){
+        int swap = relMin;
+        relMin = relMax;
+        relMax = swap;
+    }
 }
 
-bool X27168::homed(){
-    return positionKnown;
+void X27168::setRelMin(int min){
+    if(min > absMax){
+        min = absMax;
+    }
+    if(min < absMin){
+        min = absMin;
+    }
+    relMin = min;
+
+    if(relMax < relMin){
+        int swap = relMin;
+        relMin = relMax;
+        relMax = swap;
+    }
+}
+
+int X27168::getRelMax(){
+    return relMax;
+}
+
+int X27168::getRelMin(){
+    return relMin;
 }
